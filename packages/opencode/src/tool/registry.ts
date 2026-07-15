@@ -34,10 +34,12 @@ import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context } from "effect"
+import { NamedError } from "@opencode-ai/core/util/error"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Format } from "../format"
 import { InstanceState } from "@/effect/instance-state"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
@@ -87,6 +89,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/To
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
@@ -190,9 +193,12 @@ const layer = Layer.effect(
             catch: errorMessage,
           }).pipe(
             Effect.catchAll((message) =>
-              Effect.logWarning("failed to load custom tool", { tool: namespace, file: match, message }).pipe(
-                Effect.as({}),
-              ),
+              Effect.gen(function* () {
+                yield* events.publish(Session.Event.Error, {
+                  error: new NamedError.Unknown({ message }).toObject(),
+                })
+                yield* Effect.logWarning("failed to load custom tool", { tool: namespace, file: match, message })
+              }).pipe(Effect.as({})),
             ),
           )
           for (const [id, def] of Object.entries(mod)) {
