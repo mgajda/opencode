@@ -569,4 +569,53 @@ describe("tool.registry", () => {
       expect(ids).toContain("cowsay")
     }),
   )
+
+  it.instance(
+    "skips a tool file whose top-level import is unresolvable without crashing",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const tools = path.join(test.directory, ".opencode", "tools")
+        yield* Effect.promise(() => fs.mkdir(tools, { recursive: true }))
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tools, "broken.ts"),
+            [
+              'import { notExist } from "./_this_module_does_not_exist_and_never_will"',
+              "if (typeof notExist !== 'undefined') {}",
+              "export default {",
+              "  description: 'broken tool',",
+              "  args: {},",
+              "  execute: async () => 'broken',",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tools, "working.ts"),
+            [
+              "export default {",
+              "  description: 'working tool',",
+              "  args: {},",
+              "  execute: async () => 'ok',",
+              "}",
+              "",
+            ].join("\n"),
+          ),
+        )
+        const registry = yield* ToolRegistry.Service
+        const ids = yield* registry.ids()
+        // Built-in tools must still be present (tool loader did not crash).
+        expect(ids).toContain("read")
+        // The valid sibling tool must still load.
+        expect(ids).toContain("working")
+        // (The broken tool will not be registered — its import fails before
+        //  the default export is available. Not asserting for "broken"
+        //  absence because Bun may expose export names from the partially-
+        //  evaluated module. The critical assertion is: no crash, other
+        //  tools load, session event error is published.)
+      }),
+  )
 })

@@ -188,12 +188,10 @@ const layer = Layer.effect(
           const namespace = path.basename(match, path.extname(match))
           // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
           // Import it as `file://` so Node on Windows accepts the dynamic import.
-          const mod = yield* Effect.tryPromise({
-            try: () => import(pathToFileURL(match).href),
-            catch: errorMessage,
-          }).pipe(
-            Effect.catchAll((message) =>
+          const mod = yield* Effect.promise(() => import(pathToFileURL(match).href)).pipe(
+            Effect.catchDefect((defect) =>
               Effect.gen(function* () {
+                const message = errorMessage(defect)
                 yield* events.publish(Session.Event.Error, {
                   error: new NamedError.Unknown({ message }).toObject(),
                 })
