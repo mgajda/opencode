@@ -14,7 +14,6 @@ import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
-import { errorMessage } from "@/util/error"
 import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import * as Tool from "./tool"
@@ -34,7 +33,6 @@ import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer, Context } from "effect"
-import { NamedError } from "@opencode-ai/core/util/error"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Format } from "../format"
@@ -88,7 +86,6 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/To
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const events = yield* EventV2Bridge.Service
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
@@ -187,20 +184,32 @@ const layer = Layer.effect(
           const namespace = path.basename(match, path.extname(match))
           // `match` is an absolute filesystem path from `Glob.scanSync(..., { absolute: true })`.
           // Import it as `file://` so Node on Windows accepts the dynamic import.
-          const mod = yield* Effect.promise(() => import(pathToFileURL(match).href)).pipe(
-            Effect.catchDefect((defect) =>
-              Effect.gen(function* () {
-                const message = errorMessage(defect)
-                yield* events.publish(Session.Event.Error, {
-                  error: new NamedError.Unknown({ message }).toObject(),
-                })
-                yield* Effect.logWarning("failed to load custom tool", { tool: namespace, file: match, message })
-              }).pipe(Effect.as({})),
+          const mod = yield* Effect.tryPromise({
+            try: () => import(pathToFileURL(match).href),
+            catch: (error) => error,
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning(`failed to load custom tool file from: ${match}`, {
+                error: error instanceof Error ? error.stack ?? error.message : String(error),
+              }).pipe(Effect.as(null)),
             ),
           )
+          if (!mod) continue
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
-            custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
+            const tool = yield* Effect.try({
+              try: () => fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def),
+              catch: (error) => error,
+            }).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(`failed to register custom tool definition '${id}' in '${match}'`, {
+                  error: error instanceof Error ? error.stack ?? error.message : String(error),
+                }).pipe(Effect.as(null)),
+              ),
+            )
+            if (tool) {
+              custom.push(tool)
+            }
           }
         }
 
