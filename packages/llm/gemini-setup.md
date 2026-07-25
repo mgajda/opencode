@@ -68,3 +68,38 @@ the Gemini app and AI Studio web interface.
 The native LLM path retries 4 times with exponential backoff (500ms base,
 60s cap). The AI SDK path uses `maxRetries` from the caller (default 0,
 prompts pass 2). Both respect the server's `Retry-After` header.
+
+## Compliance notes
+
+### June 2026: unrestricted standard keys are rejected
+
+From **June 19, 2026**, the Gemini API rejects unrestricted standard keys.
+Any API key used with opencode must have explicit restrictions set in
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+or [AI Studio](https://aistudio.google.com/apikey):
+- API restriction: restrict to "Gemini API" only
+- Or IP/HTTP-referrer restriction for added safety
+
+### September 2026: standard keys deprecated
+
+Standard `AIza`-prefixed keys stop working. Keys created in AI Studio
+after this date use the `AQ.` prefix ("auth keys"). They work identically
+when sent as the `x-goog-api-key` header — our code handles both prefixes
+without changes.
+
+See https://ai.google.dev/gemini-api/docs/api-key for the official migration
+guide.
+
+### Terms of Service
+
+The Gemini API is governed by the
+[Gemini API Additional Terms of Service](https://ai.google.dev/gemini-api/terms).
+Key points relevant to this client:
+- `x-goog-api-key` header and `Authorization: Bearer` are both permitted
+  authentication methods — our implementation uses both correctly.
+- Free-tier prompts and responses may be used by Google to improve products.
+  Upgrading to any paid tier (Tier 1 billing or AI Pro/Ultra subscription)
+  opts out of data sharing for API usage.
+- Creating multiple Cloud projects to circumvent per-project rate limits is
+  considered abuse.
+- The API is intended for professional/business development use.
