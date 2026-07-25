@@ -166,7 +166,7 @@ function googleOAuthFetch(): typeof globalThis.fetch | undefined {
     })
     let cachedToken: { token: string; expiresAt: number } | undefined
 
-    return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const fn = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const now = Date.now()
       if (!cachedToken || cachedToken.expiresAt <= now) {
         const token = await auth.getAccessToken()
@@ -177,6 +177,7 @@ function googleOAuthFetch(): typeof globalThis.fetch | undefined {
       headers.set("Authorization", `Bearer ${cachedToken.token}`)
       return fetch(input, { ...init, headers })
     }
+    return fn as typeof globalThis.fetch
   } catch {
     return undefined
   }
