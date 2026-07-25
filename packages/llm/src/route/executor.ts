@@ -33,9 +33,9 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@opencode/LLM/RequestExecutor") {}
 
 const BODY_LIMIT = 16_384
-const MAX_RETRIES = 2
+const MAX_RETRIES = 4
 const BASE_DELAY_MS = 500
-const MAX_DELAY_MS = 10_000
+const MAX_DELAY_MS = 60_000
 const REDACTED = "<redacted>"
 
 // One source of truth for what counts as a sensitive name across headers,
