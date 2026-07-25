@@ -37,22 +37,21 @@ Higher tiers (2/3) unlock at $250/$1K cumulative spend.
 ### 3. OAuth with Google account (AI Pro / AI Ultra subscription)
 
 The Gemini plugin implements OAuth 2.0 with the scope
-`https://www.googleapis.com/auth/generative-language`. This requires:
+`https://www.googleapis.com/auth/generative-language` using PKCE
+(no client secret needed).
 
-1. An **OAuth 2.0 Client ID (Desktop app type)** from Google Cloud Console
+To use OAuth:
+
+1. Create an **OAuth 2.0 Client ID (Desktop app type)** in
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
    (APIs & Services → Credentials → Create Credentials → OAuth client ID)
 2. Add `http://localhost:1460/auth/callback` as an authorized redirect URI
-3. Set env vars:
-
-```
-GEMINI_OAUTH_CLIENT_ID=your_client_id
-GEMINI_OAUTH_CLIENT_SECRET=your_client_secret
-```
-
+3. Set `GEMINI_OAUTH_CLIENT_ID` env var (or hardcode it in the plugin source
+   for a zero-config production build)
 4. Run **/connect gemini** in opencode — a browser opens for authorization
 
 The flow uses PKCE with a local redirect server on port 1460. Tokens are
-stored and automatically refreshed.
+stored and automatically refreshed. No client secret is required.
 
 **With AI Pro ($19.99/mo)**: 1,500 req/day via OAuth
 **With AI Ultra ($99.99/mo)**: 2,000 req/day via OAuth
