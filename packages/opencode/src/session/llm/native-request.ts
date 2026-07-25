@@ -4,6 +4,7 @@ import {
   AmazonBedrock,
   Anthropic,
   Azure,
+  Gemini,
   Google,
   OpenAI,
   OpenAICompatible,
@@ -166,7 +167,10 @@ export const model = (input: Provider.Model | RequestInput, headers?: Record<str
   if (model.api.npm === "@ai-sdk/azure")
     return Azure.configure({ ...options, baseURL: requireBaseURL(model, url) }).responses(model.api.id)
   if (model.api.npm === "@ai-sdk/anthropic") return Anthropic.configure(options).model(model.api.id)
-  if (model.api.npm === "@ai-sdk/google") return Google.configure(options).model(model.api.id)
+  if (model.api.npm === "@ai-sdk/google")
+    return model.providerID === "gemini"
+      ? Gemini.configure(options).model(model.api.id)
+      : Google.configure(options).model(model.api.id)
   if (model.api.npm === "@ai-sdk/amazon-bedrock") return AmazonBedrock.configure(options).model(model.api.id)
   if (model.api.npm === "@ai-sdk/openai-compatible")
     return OpenAICompatible.configure({
