@@ -1,19 +1,18 @@
 import type { IntegrationOAuthMethodRegistration } from "@opencode-ai/plugin/v2/effect/integration"
 import { define } from "@opencode-ai/plugin/v2/effect/plugin"
-import { Effect } from "effect"
+import { createServer } from "node:http"
+import { Deferred, Effect, Random } from "effect"
 import type { Scope } from "effect"
 import { Credential } from "../../credential"
 import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
 import { OauthCallbackPage } from "../../oauth/page"
-import { ProviderV2 } from "../../provider"
 import type { PluginInternal } from "../internal"
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const GEMINI_SCOPE = "https://www.googleapis.com/auth/generative-language"
 const CALLBACK_PORT = 1460
-const POLLING_SAFETY_MARGIN = 3000
 
 type TokenResponse = {
   access_token: string
@@ -24,6 +23,16 @@ type TokenResponse = {
 const integrationID = Integration.ID.make("gemini")
 const oauthMethodID = Integration.MethodID.make("gemini-oauth")
 
+// Desktop OAuth 2.0 Client ID for the Gemini Developer API.
+// Public by design — security is provided by PKCE + localhost redirect URI.
+// To use OAuth, create an OAuth 2.0 Client ID (Desktop app type) in
+// Google Cloud Console, add http://localhost:1460/auth/callback as
+// redirect URI, then set GEMINI_OAUTH_CLIENT_ID or hardcode it below.
+//
+// For a production build, embed the client ID as a constant here so
+// users only need to run /connect gemini with no env var setup.
+const CLIENT_ID = process.env.GEMINI_OAUTH_CLIENT_ID ?? ""
+
 const oauth: IntegrationOAuthMethodRegistration = {
   integrationID,
   method: {
@@ -33,71 +42,68 @@ const oauth: IntegrationOAuthMethodRegistration = {
   },
   authorize: () =>
     Effect.gen(function* () {
-      const clientID = yield* resolveClientID()
+      if (!CLIENT_ID) return yield* Effect.fail(new Error("GEMINI_OAUTH_CLIENT_ID is not set"))
       const state = crypto.randomUUID()
-      const code = yield* Effect.promise<{ code: string; verifier: string }>(
-        () =>
-          new Promise<{ code: string; verifier: string }>((resolve, reject) => {
-            const server = require("node:http").createServer(
-              (request: any, response: any) => {
-                const url = new URL(request.url ?? "/", `http://localhost:${CALLBACK_PORT}`)
-                if (url.pathname !== "/auth/callback") {
-                  response.writeHead(404).end("Not found")
-                  return
-                }
-                const error = url.searchParams.get("error_description") ?? url.searchParams.get("error")
-                const value = url.searchParams.get("code")
-                if (error) {
-                  response
-                    .writeHead(400, { "Content-Type": "text/html" })
-                    .end(OauthCallbackPage.error(error, { provider: "Gemini" }))
-                  reject(new Error(error))
-                  return
-                }
-                if (!value || url.searchParams.get("state") !== state) {
-                  const message = value ? "Invalid OAuth state" : "Missing authorization code"
-                  response
-                    .writeHead(400, { "Content-Type": "text/html" })
-                    .end(OauthCallbackPage.error(message, { provider: "Gemini" }))
-                  reject(new Error(message))
-                  return
-                }
-                response
-                  .writeHead(200, { "Content-Type": "text/html" })
-                  .end(OauthCallbackPage.success({ provider: "Gemini" }))
-                server.close()
-                resolve({ code: value, verifier: "" })
-              },
-            )
-            server.once("error", (err: Error) => { server.close(); reject(err) })
-            server.listen(CALLBACK_PORT, "localhost", () => {})
-          }),
-      )
+      const verifier = yield* generateVerifier()
+      const challenge = yield* challengeFromVerifier(verifier)
+      const code = yield* Deferred.make<string, Error>()
+      const server = createServer((request, response) => {
+        const url = new URL(request.url ?? "/", `http://localhost:${CALLBACK_PORT}`)
+        if (url.pathname !== "/auth/callback") {
+          response.writeHead(404).end("Not found")
+          return
+        }
+        const error = url.searchParams.get("error_description") ?? url.searchParams.get("error")
+        const value = url.searchParams.get("code")
+        if (error) {
+          response
+            .writeHead(400, { "Content-Type": "text/html" })
+            .end(OauthCallbackPage.error(error, { provider: "Gemini" }))
+          Effect.runFork(Deferred.fail(code, new Error(error)))
+          return
+        }
+        if (!value || url.searchParams.get("state") !== state) {
+          const message = value ? "Invalid OAuth state" : "Missing authorization code"
+          response
+            .writeHead(400, { "Content-Type": "text/html" })
+            .end(OauthCallbackPage.error(message, { provider: "Gemini" }))
+          Effect.runFork(Deferred.fail(code, new Error(message)))
+          return
+        }
+        response
+          .writeHead(200, { "Content-Type": "text/html" })
+          .end(OauthCallbackPage.success({ provider: "Gemini" }))
+        Effect.runFork(Deferred.succeed(code, value))
+      })
+      yield* Effect.callback<void, Error>((resume) => {
+        server.once("error", (error) => resume(Effect.fail(error)))
+        server.listen(CALLBACK_PORT, "localhost", () => resume(Effect.void))
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(() => server.close()))
       return {
         mode: "auto" as const,
         url: `${GOOGLE_AUTH_URL}?${new URLSearchParams({
-          client_id: clientID,
+          client_id: CLIENT_ID,
           redirect_uri: `http://localhost:${CALLBACK_PORT}/auth/callback`,
           response_type: "code",
           scope: GEMINI_SCOPE,
           access_type: "offline",
           state,
-          prompt: "consent",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
         })}`,
-        instructions:
-          "Complete authorization in your browser. Make sure your OAuth client has http://localhost:1460/auth/callback as an authorized redirect URI.",
+        instructions: "Complete authorization in your browser.",
         callback: Effect.gen(function* () {
-          const cid = yield* resolveClientID()
-          const csecret = yield* resolveClientSecret()
+          const authCode = yield* Deferred.await(code)
           const result = yield* request<TokenResponse>(GOOGLE_TOKEN_URL, {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": `opencode/${InstallationVersion}` },
             body: new URLSearchParams({
-              code: code.code,
-              client_id: cid,
-              client_secret: csecret,
+              code: authCode,
+              client_id: CLIENT_ID,
               redirect_uri: `http://localhost:${CALLBACK_PORT}/auth/callback`,
               grant_type: "authorization_code",
+              code_verifier: verifier,
             }).toString(),
           })
           return Credential.OAuth.make({
@@ -112,15 +118,13 @@ const oauth: IntegrationOAuthMethodRegistration = {
     }),
   refresh: (value) =>
     Effect.gen(function* () {
-      const clientID = yield* resolveClientID()
-      const clientSecret = yield* resolveClientSecret()
+      if (!CLIENT_ID) return yield* Effect.fail(new Error("GEMINI_OAUTH_CLIENT_ID is not set"))
       const result = yield* request<TokenResponse>(GOOGLE_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": `opencode/${InstallationVersion}` },
         body: new URLSearchParams({
           refresh_token: value.refresh,
-          client_id: clientID,
-          client_secret: clientSecret,
+          client_id: CLIENT_ID,
           grant_type: "refresh_token",
         }).toString(),
       })
@@ -134,20 +138,6 @@ const oauth: IntegrationOAuthMethodRegistration = {
       })
     }),
 }
-
-const resolveClientID = () =>
-  Effect.gen(function* () {
-    const from = typeof process !== "undefined" ? process.env.GEMINI_OAUTH_CLIENT_ID : undefined
-    if (from) return from
-    return yield* Effect.fail(new Error("GEMINI_OAUTH_CLIENT_ID is not set"))
-  })
-
-const resolveClientSecret = () =>
-  Effect.gen(function* () {
-    const from = typeof process !== "undefined" ? process.env.GEMINI_OAUTH_CLIENT_SECRET : undefined
-    if (from) return from
-    return yield* Effect.fail(new Error("GEMINI_OAUTH_CLIENT_SECRET is not set"))
-  })
 
 function request<A>(url: string, init: RequestInit) {
   return Effect.tryPromise({
@@ -163,11 +153,8 @@ function request<A>(url: string, init: RequestInit) {
 type FetchFn = (input: Parameters<typeof fetch>[0], init?: RequestInit) => Promise<Response>
 
 const tryOAuthWrap = (): ((inner?: FetchFn) => FetchFn) | undefined => {
-  const clientID = typeof process !== "undefined" ? process.env.GEMINI_OAUTH_CLIENT_ID : undefined
-  const clientSecret = typeof process !== "undefined" ? process.env.GEMINI_OAUTH_CLIENT_SECRET : undefined
-  if (!clientID || !clientSecret) return undefined
+  if (!CLIENT_ID) return undefined
 
-  // Load stored OAuth tokens from opencode's auth file
   const authPath = (() => {
     const home = typeof process !== "undefined" ? process.env.HOME ?? process.env.USERPROFILE : undefined
     if (!home) return undefined
@@ -196,13 +183,12 @@ const tryOAuthWrap = (): ((inner?: FetchFn) => FetchFn) | undefined => {
   }
 
   const doRefresh = async (): Promise<string> => {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
+    const res = await fetch(GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         refresh_token: refreshToken,
-        client_id: clientID,
-        client_secret: clientSecret,
+        client_id: CLIENT_ID,
         grant_type: "refresh_token",
       }).toString(),
     })
@@ -235,6 +221,27 @@ const tryOAuthWrap = (): ((inner?: FetchFn) => FetchFn) | undefined => {
           return fetch(input, { ...init, headers })
         }
 }
+
+const generateVerifier = () =>
+  Effect.gen(function* () {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    let result = ""
+    for (let i = 0; i < 43; i++) {
+      const index = yield* Random.nextIntBetween(0, chars.length - 1)
+      result += chars[index]
+    }
+    return result
+  })
+
+const challengeFromVerifier = (verifier: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+      return btoa(String.fromCharCode(...new Uint8Array(hash)))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    },
+    catch: () => new Error("Failed to generate PKCE challenge"),
+  })
 
 export const GeminiPlugin = define({
   id: "gemini",
