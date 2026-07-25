@@ -52,21 +52,21 @@ function statusWithFetch(
   fetch: typeof globalThis.fetch | undefined,
 ): RuntimeStatus {
   const providerID = input.model.providerID
-  if (providerID !== "openai" && providerID !== "anthropic" && !providerID.startsWith("opencode"))
-    return { type: "unsupported", reason: "provider is not openai, opencode, or anthropic" }
+  if (providerID !== "openai" && providerID !== "anthropic" && providerID !== "google" && !providerID.startsWith("opencode"))
+    return { type: "unsupported", reason: "provider is not openai, google, opencode, or anthropic" }
   const npm = input.model.api.npm
-  if (npm !== "@ai-sdk/openai" && npm !== "@ai-sdk/openai-compatible" && npm !== "@ai-sdk/anthropic")
-    return { type: "unsupported", reason: "provider package is not OpenAI, OpenAI-compatible, or Anthropic" }
-  if (input.auth?.type === "oauth" && !(input.provider.id === "openai" && fetch)) {
+  if (npm !== "@ai-sdk/openai" && npm !== "@ai-sdk/openai-compatible" && npm !== "@ai-sdk/anthropic" && npm !== "@ai-sdk/google")
+    return { type: "unsupported", reason: "provider package is not OpenAI, OpenAI-compatible, Google, or Anthropic" }
+  if (input.auth?.type === "oauth" && !((input.provider.id === "openai" || input.provider.id === "google") && fetch)) {
     return { type: "unsupported", reason: "OAuth auth requires a provider fetch override" }
   }
 
   const apiKey = typeof input.provider.options.apiKey === "string" ? input.provider.options.apiKey : input.provider.key
-  if (!apiKey) return { type: "unsupported", reason: "API key is not configured" }
+  if (!apiKey && input.auth?.type !== "oauth") return { type: "unsupported", reason: "API key is not configured" }
 
   return {
     type: "supported",
-    apiKey,
+    apiKey: apiKey ?? "",
     baseURL: typeof input.provider.options.baseURL === "string" ? input.provider.options.baseURL : undefined,
   }
 }
@@ -146,10 +146,43 @@ export function stream(input: StreamInput): StreamResult {
 }
 
 function providerFetch(input: Pick<StreamInput, "provider" | "auth">): typeof globalThis.fetch | undefined {
-  if (input.provider.id !== "openai" || input.auth?.type !== "oauth") return undefined
-  const value: unknown = input.provider.options.fetch
-  if (typeof value !== "function") return undefined
-  return value as typeof globalThis.fetch
+  if (input.auth?.type !== "oauth") return undefined
+
+  if (input.provider.id === "openai") {
+    const value: unknown = input.provider.options.fetch
+    if (typeof value !== "function") return undefined
+    return value as typeof globalThis.fetch
+  }
+
+  if (input.provider.id === "google") {
+    return googleOAuthFetch()
+  }
+
+  return undefined
+}
+
+function googleOAuthFetch(): typeof globalThis.fetch | undefined {
+  try {
+    const { GoogleAuth } = require("google-auth-library") as typeof import("google-auth-library")
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/generative-language"],
+    })
+    let cachedToken: { token: string; expiresAt: number } | undefined
+
+    return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const now = Date.now()
+      if (!cachedToken || cachedToken.expiresAt <= now) {
+        const token = await auth.getAccessToken()
+        if (!token) throw new Error("Failed to obtain Google OAuth access token")
+        cachedToken = { token, expiresAt: now + 45_000 }
+      }
+      const headers = new Headers(init?.headers)
+      headers.set("Authorization", `Bearer ${cachedToken.token}`)
+      return fetch(input, { ...init, headers })
+    }
+  } catch {
+    return undefined
+  }
 }
 
 function providerHeaders(value: unknown): Record<string, string> | undefined {
