@@ -10,15 +10,15 @@ No credit card required.
 opencode accepts the key via any of these env vars (checked in order):
 
 ```
-GOOGLE_API_KEY
-GOOGLE_GENERATIVE_AI_API_KEY
 GEMINI_API_KEY
+GOOGLE_GENERATIVE_AI_API_KEY
+GOOGLE_API_KEY
 ```
 
 Or set it in `opencode.json`:
 
 ```json
-{ "provider": { "google": { "options": { "apiKey": "AIza..." } } } }
+{ "provider": { "gemini": { "options": { "apiKey": "AIza..." } } } }
 ```
 
 **Free tier limits**: 250 req/day, 5-15 RPM, 250K TPM.
@@ -36,16 +36,23 @@ Higher tiers (2/3) unlock at $250/$1K cumulative spend.
 
 ### 3. OAuth with Google account (AI Pro / AI Ultra subscription)
 
-The code supports OAuth via Application Default Credentials (ADC):
+The Gemini plugin implements OAuth 2.0 with the scope
+`https://www.googleapis.com/auth/generative-language`. This requires:
 
-```bash
-gcloud auth application-default login
+1. An **OAuth 2.0 Client ID (Desktop app type)** from Google Cloud Console
+   (APIs & Services → Credentials → Create Credentials → OAuth client ID)
+2. Add `http://localhost:1460/auth/callback` as an authorized redirect URI
+3. Set env vars:
+
+```
+GEMINI_OAUTH_CLIENT_ID=your_client_id
+GEMINI_OAUTH_CLIENT_SECRET=your_client_secret
 ```
 
-The `google-auth-library` reads credentials from:
-- `GOOGLE_APPLICATION_CREDENTIALS` env var (service account key path)
-- `gcloud` default credentials
-- GCE metadata server
+4. Run **/connect gemini** in opencode — a browser opens for authorization
+
+The flow uses PKCE with a local redirect server on port 1460. Tokens are
+stored and automatically refreshed.
 
 **With AI Pro ($19.99/mo)**: 1,500 req/day via OAuth
 **With AI Ultra ($99.99/mo)**: 2,000 req/day via OAuth
@@ -54,14 +61,28 @@ Plans: https://one.google.com/about/google-ai-plans/
 **Google AI Plus ($4.99/mo)** does NOT increase API limits — it only boosts
 the Gemini app and AI Studio web interface.
 
+**`gcloud auth application-default login` does NOT work** for the Developer
+API — it authenticates to Vertex AI / Enterprise Agent Platform
+(`cloud-platform` scope), not to the Gemini Developer API.
+
 ## Summary
 
 | Method | Daily limit | RPM | Cost |
 |--------|-------------|-----|------|
 | API key (free) | 250 | 5-15 | Free |
 | API key (Tier 1) | 1K-1.5K | 150-300 | Pay per token |
-| OAuth + AI Pro | 1,500 | — | $19.99/mo |
-| OAuth + AI Ultra | 2,000 | — | $99.99/mo |
+| OAuth (AI Pro) | 1,500 | — | $19.99/mo |
+| OAuth (AI Ultra) | 2,000 | — | $99.99/mo |
+
+## Provider name
+
+This provider is called **gemini** (not "google"). Use it in opencode.json:
+```json
+{ "provider": { "gemini": { "options": { "apiKey": "AIza..." } } } }
+```
+
+The provider ID is `gemini`. The `/connect gemini` command in opencode
+starts the OAuth flow.
 
 ## Retry behaviour
 

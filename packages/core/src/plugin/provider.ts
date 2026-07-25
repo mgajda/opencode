@@ -11,6 +11,7 @@ import { DynamicProviderPlugin } from "./provider/dynamic"
 import { GatewayPlugin } from "./provider/gateway"
 import { GithubCopilotPlugin } from "./provider/github-copilot"
 import { GitLabPlugin } from "./provider/gitlab"
+import { GeminiPlugin } from "./provider/gemini"
 import { GooglePlugin } from "./provider/google"
 import { GoogleVertexAnthropicPlugin, GoogleVertexPlugin } from "./provider/google-vertex"
 import { GroqPlugin } from "./provider/groq"
@@ -45,6 +46,7 @@ export const ProviderPlugins: PluginInternal.Plugin<PluginInternal.Requirements 
   CoherePlugin,
   DeepInfraPlugin,
   GatewayPlugin,
+  GeminiPlugin,
   GithubCopilotPlugin,
   GitLabPlugin,
   GooglePlugin,

@@ -54,7 +54,7 @@ function statusWithFetch(
   const npm = input.model.api.npm
   if (!LLMNative.SUPPORTED_NPM_PACKAGES.has(npm))
     return { type: "unsupported", reason: `provider package ${npm} is not supported by native runtime` }
-  if (input.auth?.type === "oauth" && !((input.provider.id === "openai" || input.provider.id === "google") && fetch)) {
+  if (input.auth?.type === "oauth" && !(input.provider.id === "openai" && fetch)) {
     return { type: "unsupported", reason: "OAuth auth requires a provider fetch override" }
   }
 
@@ -151,36 +151,7 @@ function providerFetch(input: Pick<StreamInput, "provider" | "auth">): typeof gl
     return value as typeof globalThis.fetch
   }
 
-  if (input.provider.id === "google") {
-    return googleOAuthFetch()
-  }
-
   return undefined
-}
-
-function googleOAuthFetch(): typeof globalThis.fetch | undefined {
-  try {
-    const { GoogleAuth } = require("google-auth-library") as typeof import("google-auth-library")
-    const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/generative-language"],
-    })
-    let cachedToken: { token: string; expiresAt: number } | undefined
-
-    const fn = async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const now = Date.now()
-      if (!cachedToken || cachedToken.expiresAt <= now) {
-        const token = await auth.getAccessToken()
-        if (!token) throw new Error("Failed to obtain Google OAuth access token")
-        cachedToken = { token, expiresAt: now + 45_000 }
-      }
-      const headers = new Headers(init?.headers)
-      headers.set("Authorization", `Bearer ${cachedToken.token}`)
-      return fetch(input, { ...init, headers })
-    }
-    return fn as typeof globalThis.fetch
-  } catch {
-    return undefined
-  }
 }
 
 function providerHeaders(value: unknown): Record<string, string> | undefined {
