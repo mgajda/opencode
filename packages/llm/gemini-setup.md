@@ -34,34 +34,30 @@ Pricing: https://ai.google.dev/gemini-api/docs/pricing
 
 Higher tiers (2/3) unlock at $250/$1K cumulative spend.
 
-### 3. OAuth with Google account (AI Pro / AI Ultra subscription)
+### 3. Higher rate limits: Cloud billing (recommended)
 
-The Gemini plugin implements OAuth 2.0 with the scope
-`https://www.googleapis.com/auth/generative-language` using PKCE
-(no client secret needed).
+The Gemini Developer API at `generativelanguage.googleapis.com` does
+not support OAuth — it only accepts API keys (`x-goog-api-key` header).
+The `peruserquota` scope is not usable from public clients.
 
-To use OAuth:
+The Gemini CLI itself uses a **separate private endpoint**
+(`cloudcode-pa.googleapis.com`) for its OAuth path, which is not
+publicly available.
 
-1. Create an **OAuth 2.0 Client ID (Desktop app type)** in
-   [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-   (APIs & Services → Credentials → Create Credentials → OAuth client ID)
-2. Add `http://localhost:1460/auth/callback` as an authorized redirect URI
-3. Set `GEMINI_OAUTH_CLIENT_ID` env var (or hardcode it in the plugin source
-   for a zero-config production build)
-4. Run **/connect gemini** in opencode — a browser opens for authorization
+The only working path to higher rate limits:
 
-The flow uses PKCE with a local redirect server on port 1460. Tokens are
-stored and automatically refreshed. No client secret is required.
-
-**With AI Pro ($19.99/mo)**: 1,500 req/day via OAuth
-**With AI Ultra ($99.99/mo)**: 2,000 req/day via OAuth
-Plans: https://one.google.com/about/google-ai-plans/
+1. **Enable Cloud billing** on the Google Cloud project that owns
+   your API key at https://console.cloud.google.com/billing
+2. No minimum spend — pay per token consumed
+3. Rate limits go from 250 req/day / 5-15 RPM → **1K-1.5K req/day
+   / 150-300 RPM**
 
 **Google AI Plus ($4.99/mo)** does NOT increase API limits — it only boosts
 the Gemini app and AI Studio web interface.
 
-**`gcloud auth application-default login` does NOT work** for the Developer
-API — it authenticates to Vertex AI / Enterprise Agent Platform
+**`gcloud auth application-default login` does NOT work** — it authenticates
+to Vertex AI / Enterprise Agent Platform (`cloud-platform` scope), not to the
+Gemini Developer API.
 (`cloud-platform` scope), not to the Gemini Developer API.
 
 ## Summary
@@ -70,8 +66,6 @@ API — it authenticates to Vertex AI / Enterprise Agent Platform
 |--------|-------------|-----|------|
 | API key (free) | 250 | 5-15 | Free |
 | API key (Tier 1) | 1K-1.5K | 150-300 | Pay per token |
-| OAuth (AI Pro) | 1,500 | — | $19.99/mo |
-| OAuth (AI Ultra) | 2,000 | — | $99.99/mo |
 
 ## Provider name
 
