@@ -1,0 +1,22 @@
+# upgrades.list — changes carried from the locally installed opencode build
+#
+# Current code: mgajda/opencode @ dev
+#   pre-upgrade base  : upstream v1.18.1-era  (05c3e40a4, "fix(app): tolerate null session archive times (#36999)")
+#   latest release    : upstream v1.18.18    (31406ccc51, "release: v1.18.18", 2026-08-13)
+#
+# Locally installed build: ~/.opencode/bin/opencode -> 0.0.0-local-release-202607270348
+#   built 2026-07-27 from fork branch `local-branch`, on top of v1.18.1-era.
+#   Earlier .bak build (0.0.0-tui-tool-load-error-202607152008, branch `fix/tui-tool-load-event`)
+#   was a superseded iteration of the same change set.
+# Related upstream PRs (not merged upstream): #37411, #37410, #37284, #37936, #37504,
+#   #37494, #38925 (parallel/updated versions of this work; only local-branch commits merged here).
+#
+# Merged one-by-one (chronological order, cherry-picked from `local-branch`, all authored by mgajda):
+#   - packages/opencode/src/tool/registry.ts
+#   - packages/opencode/test/tool/registry.test.ts
+#
+# 1. 79649031de fix: graceful error when custom tool import fails
+# 2. 5d6c8f5c5d fix(tui): publish session event when custom tool import fails
+# 3. 0d8d429d9c test: verify custom tool import error is skipped gracefully
+# 4. c2bb63d93e fix: catch Bun ResolveMessage with Effect.catchDefect instead of Effect.catchAllCause
+# 5. 53450aaa91 feat: adopt Goodeve0's approach for graceful custom tool error handling
