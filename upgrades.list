@@ -20,3 +20,18 @@
 # 3. 0d8d429d9c test: verify custom tool import error is skipped gracefully
 # 4. c2bb63d93e fix: catch Bun ResolveMessage with Effect.catchDefect instead of Effect.catchAllCause
 # 5. 53450aaa91 feat: adopt Goodeve0's approach for graceful custom tool error handling
+#
+# Verification (2026-08-14):
+#   - bun install (4715 pkgs, bun.lock unchanged)
+#   - bun typecheck (packages/opencode): clean
+#   - bun test test/tool/registry.test.ts (packages/opencode): 16 pass / 0 fail
+#
+# Local install (2026-08-14):
+#   - Built: bun run build --single (packages/opencode) -> dist/opencode-linux-x64/bin/opencode
+#     version 0.0.0-dev-202608142002 (dev channel, from branch `dev` at 55d36c0d29)
+#   - Installed to ~/.opencode/bin/opencode (on PATH). Old local build
+#     0.0.0-local-release-202607270348 was overwritten; its source is preserved as fork
+#     branch `local-branch` (now also merged into dev) and is rebuildable.
+#   - PATH: `opencode` resolves via ~/.local/bin/opencode wrapper, which runs the repo
+#     source (bun run packages/opencode/src/index.ts from /home/m/src/opencode) — so the
+#     on-PATH command now serves the upgraded dev tree.
