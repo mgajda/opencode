@@ -26,9 +26,12 @@
 #   - bun typecheck (packages/opencode): clean
 #   - bun test test/tool/registry.test.ts (packages/opencode): 16 pass / 0 fail
 #
-# Local install (2026-08-14):
-#   - Built: bun run build --single (packages/opencode) -> dist/opencode-linux-x64/bin/opencode
-#     version 0.0.0-dev-202608142002 (dev channel, from branch `dev` at 55d36c0d29)
+# Local install (2026-08-16):
+#   - Built: OPENCODE_VERSION=1.18.18-dev.<sha> bun run build --single (packages/opencode)
+#     -> dist/opencode-linux-x64/bin/opencode, version 1.18.18-dev.47d1ffddd1
+#     (base release v1.18.18 + local commit 47d1ffddd1), from branch `dev` at 47d1ffddd1.
+#     Note: the dev prerelease sorts below v1.18.18, so if `autoupdate` is enabled the
+#     standalone binary may offer/auto-apply an upgrade to v1.18.18 at TUI start.
 #   - Installed to ~/.opencode/bin/opencode (on PATH). Old local build
 #     0.0.0-local-release-202607270348 was overwritten; its source is preserved as fork
 #     branch `local-branch` (now also merged into dev) and is rebuildable.
