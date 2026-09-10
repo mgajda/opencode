@@ -5,7 +5,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { expect } from "bun:test"
+import { expect, test } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -914,6 +914,74 @@ it.instance("loop continues when finish is stop but assistant has tool parts", (
       expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
       expect(result.info.finish).toBe("stop")
     }
+  }),
+)
+
+it.instance("loop command self-paces until assistant signals stop", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* llm.text("first iteration\n<loop:continue>")
+    yield* llm.text("second iteration\n<loop:stop>")
+
+    const result = yield* prompt.command({
+      sessionID: session.id,
+      command: "loop",
+      arguments: "check whether the deploy finished",
+    })
+
+    expect(result.parts.some((part) => part.type === "text" && part.text === "first iteration")).toBe(true)
+    let texts: string[] = []
+    for (let i = 0; i < 20; i++) {
+      yield* Effect.sleep(75)
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      texts = messages.flatMap((message) =>
+        message.info.role === "assistant"
+          ? message.parts.flatMap((part) => (part.type === "text" ? [part.text] : []))
+          : [],
+      )
+      if (texts.includes("second iteration")) break
+    }
+
+    expect(texts).toContain("first iteration")
+    expect(texts).toContain("second iteration")
+    expect(texts.join("\n")).not.toContain("<loop:")
+    expect(yield* llm.calls).toBe(2)
+  }),
+)
+
+it.instance("loop command stop cancels the pending next iteration", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+
+    yield* llm.text("first iteration\n<loop:continue>")
+
+    yield* prompt.command({
+      sessionID: session.id,
+      command: "loop",
+      arguments: "watch the deploy",
+    })
+    const stop = yield* prompt.command({
+      sessionID: session.id,
+      command: "loop",
+      arguments: "stop",
+    })
+
+    expect(stop.parts.some((part) => part.type === "text" && part.text === "Stopped the active loop.")).toBe(true)
+    yield* Effect.sleep(1200)
+    expect(yield* llm.calls).toBe(1)
   }),
 )
 
@@ -2440,3 +2508,31 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+test("parseLoopCommandArguments handles stop, interval, and prompt text", () => {
+  expect(SessionPrompt.parseLoopCommandArguments("stop")).toEqual({ action: "stop" })
+  expect(SessionPrompt.parseLoopCommandArguments("5m check deploy")).toEqual({
+    action: "start",
+    intervalMs: 5 * 60 * 1000,
+    prompt: SessionPrompt.buildLoopPrompt("check deploy"),
+  })
+  expect(SessionPrompt.parseLoopCommandArguments("check deploy")).toEqual({
+    action: "start",
+    prompt: SessionPrompt.buildLoopPrompt("check deploy"),
+  })
+})
+
+test("extractLoopControl strips loop markers from assistant text", () => {
+  expect(SessionPrompt.extractLoopControl("still working\n<loop:continue>")).toEqual({
+    action: "continue",
+    text: "still working",
+  })
+  expect(SessionPrompt.extractLoopControl("all done\n<loop:stop>")).toEqual({
+    action: "stop",
+    text: "all done",
+  })
+  expect(SessionPrompt.extractLoopControl("no marker")).toEqual({
+    action: "stop",
+    text: "no marker",
+  })
+})
