@@ -79,6 +79,7 @@ import { collapseToolOutput } from "../../util/collapse-tool-output"
 import { usePluginRuntime } from "../../plugin/runtime"
 import { DialogRetryAction } from "../../component/dialog-retry-action"
 import { getRevertDiffFiles } from "../../util/revert-diff"
+import { parseLoopPrompt } from "../../util/loop-prompt"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
@@ -1367,6 +1368,8 @@ function UserMessage(props: {
       .filter(Boolean)
     return texts.join("\n\n")
   })
+  const loopPrompt = createMemo(() => parseLoopPrompt(text()))
+  const [showLoopDetails, setShowLoopDetails] = createSignal(false)
   const files = createMemo(() => props.parts.flatMap((x) => (x.type === "file" ? [x] : [])))
   const { theme } = useTheme()
   const [hover, setHover] = createSignal(false)
@@ -1402,7 +1405,36 @@ function UserMessage(props: {
             backgroundColor={hover() ? theme.backgroundElement : theme.backgroundPanel}
             flexShrink={0}
           >
-            <text fg={theme.text}>{text()}</text>
+            <Show
+              when={loopPrompt()}
+              fallback={<text fg={theme.text}>{text()}</text>}
+            >
+              {(lp) => (
+                <box flexDirection="column">
+                  <box
+                    flexDirection="row"
+                    gap={1}
+                    onMouseUp={(e) => {
+                      e.stopPropagation()
+                      setShowLoopDetails((prev) => !prev)
+                    }}
+                  >
+                    <text fg={theme.warning}>
+                      <span style={{ bold: true }}>{showLoopDetails() ? "-" : "+"}</span>
+                    </text>
+                    <text fg={theme.warning}>
+                      <span style={{ bold: true }}>{lp().goal}</span>
+                    </text>
+                    <text fg={theme.textMuted}>loop</text>
+                  </box>
+                  <Show when={showLoopDetails()}>
+                    <box paddingLeft={2} marginTop={1}>
+                      <text fg={theme.textMuted}>{lp().instructions}</text>
+                    </box>
+                  </Show>
+                </box>
+              )}
+            </Show>
             <Show when={files().length}>
               <box flexDirection="row" paddingBottom={metadataVisible() ? 1 : 0} paddingTop={1} gap={1} flexWrap="wrap">
                 <For each={files()}>
